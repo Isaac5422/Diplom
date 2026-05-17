@@ -1,0 +1,17 @@
+{
+  "include": ["backend/app", "backend/tests"],
+  "exclude": [
+    "**/__pycache__",
+    "backend/.venv",
+    "frontend/node_modules",
+    "frontend/dist"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "backend",
+      "extraPaths": ["backend"]
+    }
+  ],
+  "pythonVersion": "3.14",
+  "typeCheckingMode": "basic"
+}

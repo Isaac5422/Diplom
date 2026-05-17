@@ -1,0 +1,427 @@
+import { useEffect, useState } from 'react';
+import { api } from '../api/client.js';
+import { RiskBadge } from '../components/RiskBadge.jsx';
+import { FactorCard } from '../components/FactorCard.jsx';
+
+export function Dashboard() {
+  const [candidates, setCandidates] = useState([]);
+  const [selectedCandidate, setSelectedCandidate] = useState(null);
+  const [experiences, setExperiences] = useState([]);
+  const [profiles, setProfiles] = useState([]);
+  const [report, setReport] = useState(null);
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [filterRisk, setFilterRisk] = useState(null); // null, 'high', 'low'
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createFormData, setCreateFormData] = useState({
+    full_name: '',
+    email: '',
+    target_position: '',
+    level: 'Junior',
+    declared_total_months: 0,
+    resume_text: '',
+  });
+
+  async function loadCandidates() {
+    try {
+      setIsLoading(true);
+      setError('');
+      const data = await api.getCandidates();
+      const list = Array.isArray(data) ? data : [];
+      setCandidates(list);
+      if (list.length > 0 && !selectedCandidate) {
+        setSelectedCandidate(list[0]);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function loadFilteredCandidates(riskType) {
+    try {
+      setIsLoading(true);
+      setError('');
+      const data = await api.getFilteredCandidates(riskType);
+      const list = Array.isArray(data) ? data : [];
+      setCandidates(list);
+      if (list.length > 0 && !selectedCandidate) {
+        setSelectedCandidate(list[0]);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function selectCandidate(candidate) {
+    try {
+      setError('');
+      setSelectedCandidate(candidate);
+      setReport(null);
+      const [expData, profileData] = await Promise.all([
+        api.getExperiences(candidate.id),
+        api.getProfiles(candidate.id),
+      ]);
+      setExperiences(Array.isArray(expData) ? expData : []);
+      setProfiles(Array.isArray(profileData) ? profileData : []);
+    } catch (err) {
+      setExperiences([]);
+      setProfiles([]);
+      setError(err.message);
+    }
+  }
+
+  async function runCheck() {
+    if (!selectedCandidate) return;
+    try {
+      setError('');
+      const data = await api.runCheck(selectedCandidate.id);
+      setReport(data);
+      // Обновляем список кандидатов после проверки
+      await loadCandidates();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleCreateCandidate(e) {
+    e.preventDefault();
+    try {
+      setError('');
+      await api.createCandidate(createFormData);
+      setCreateFormData({
+        full_name: '',
+        email: '',
+        target_position: '',
+        level: 'Junior',
+        declared_total_months: 0,
+        resume_text: '',
+      });
+      setShowCreateForm(false);
+      // Загружаем список кандидатов заново
+      await loadCandidates();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function handleFilterChange(type) {
+    setFilterRisk(type);
+    if (type) {
+      loadFilteredCandidates(type);
+    } else {
+      loadCandidates();
+    }
+  }
+
+  function handleExportCsv(riskType) {
+    window.location.href = `/api/candidates/export/csv${riskType ? `?risk_type=${riskType}` : ''}`;
+  }
+
+  useEffect(() => {
+    loadCandidates();
+  }, []);
+
+  useEffect(() => {
+    if (selectedCandidate) {
+      selectCandidate(selectedCandidate);
+    }
+  }, [selectedCandidate?.id]);
+
+  return (
+    <main className="layout">
+      <section className="hero">
+        <div>
+          <p className="eyebrow">ВКР · Resume Trust Analyzer</p>
+          <h1>Система выявления признаков сфальсифицированного опыта в IT-резюме</h1>
+          <p>
+            Прототип собирает данные кандидата, анализирует опыт, цифровой след и формирует объяснимую риск-оценку для рекрутера.
+          </p>
+        </div>
+        <button onClick={runCheck} disabled={!selectedCandidate}>
+          Запустить проверку
+        </button>
+      </section>
+
+      {error && <div className="errorBox">{error}</div>}
+
+      <div className="grid">
+        <section className="card">
+          <h2>Кандидаты</h2>
+          
+          <div style={{ marginBottom: '1rem' }}>
+            <button 
+              onClick={() => setShowCreateForm(!showCreateForm)}
+              style={{ marginBottom: '0.5rem', width: '100%', padding: '0.5rem' }}
+            >
+              {showCreateForm ? 'Закрыть форму' : '+ Добавить кандидата'}
+            </button>
+            
+            {showCreateForm && (
+              <form onSubmit={handleCreateCandidate} style={{ padding: '1rem', border: '1px solid #ddd', borderRadius: '4px' }}>
+                <input
+                  type="text"
+                  placeholder="ФИ кандидата"
+                  value={createFormData.full_name}
+                  onChange={(e) => setCreateFormData({...createFormData, full_name: e.target.value})}
+                  required
+                  style={{ width: '100%', marginBottom: '0.5rem', padding: '0.5rem' }}
+                />
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={createFormData.email}
+                  onChange={(e) => setCreateFormData({...createFormData, email: e.target.value})}
+                  style={{ width: '100%', marginBottom: '0.5rem', padding: '0.5rem' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Целевая позиция"
+                  value={createFormData.target_position}
+                  onChange={(e) => setCreateFormData({...createFormData, target_position: e.target.value})}
+                  required
+                  style={{ width: '100%', marginBottom: '0.5rem', padding: '0.5rem' }}
+                />
+                <select
+                  value={createFormData.level}
+                  onChange={(e) => setCreateFormData({...createFormData, level: e.target.value})}
+                  style={{ width: '100%', marginBottom: '0.5rem', padding: '0.5rem' }}
+                >
+                  <option>Junior</option>
+                  <option>Middle</option>
+                  <option>Senior</option>
+                </select>
+                <input
+                  type="number"
+                  placeholder="Заявленный стаж (месяцы)"
+                  value={createFormData.declared_total_months}
+                  onChange={(e) => setCreateFormData({...createFormData, declared_total_months: parseInt(e.target.value) || 0})}
+                  min="0"
+                  style={{ width: '100%', marginBottom: '0.5rem', padding: '0.5rem' }}
+                />
+                <textarea
+                  placeholder="Текст резюме"
+                  value={createFormData.resume_text}
+                  onChange={(e) => setCreateFormData({...createFormData, resume_text: e.target.value})}
+                  style={{ width: '100%', marginBottom: '0.5rem', padding: '0.5rem', minHeight: '100px' }}
+                />
+                <button type="submit" style={{ width: '100%', padding: '0.5rem' }}>
+                  Добавить кандидата
+                </button>
+              </form>
+            )}
+          </div>
+
+          <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem' }}>
+            <button 
+              onClick={() => handleFilterChange(null)}
+              style={{ flex: 1, padding: '0.5rem', background: filterRisk === null ? '#0066cc' : '#ddd', color: filterRisk === null ? '#fff' : '#000' }}
+            >
+              Все ({candidates.length})
+            </button>
+            <button 
+              onClick={() => handleFilterChange('high')}
+              style={{ flex: 1, padding: '0.5rem', background: filterRisk === 'high' ? '#cc0000' : '#ddd', color: filterRisk === 'high' ? '#fff' : '#000' }}
+            >
+              Высокий риск
+            </button>
+            <button 
+              onClick={() => handleFilterChange('low')}
+              style={{ flex: 1, padding: '0.5rem', background: filterRisk === 'low' ? '#00aa00' : '#ddd', color: filterRisk === 'low' ? '#fff' : '#000' }}
+            >
+              Низкий риск
+            </button>
+          </div>
+
+          <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', flexDirection: 'column' }}>
+            <button 
+              onClick={() => handleExportCsv()}
+              style={{ width: '100%', padding: '0.5rem', background: '#666', color: '#fff' }}
+              title="Экспортировать всех кандидатов"
+            >
+              📥 Экспорт все
+            </button>
+            <button 
+              onClick={() => handleExportCsv('high')}
+              style={{ width: '100%', padding: '0.5rem', background: '#cc0000', color: '#fff' }}
+              title="Экспортировать кандидатов с высоким риском"
+            >
+              📥 Экспорт высокий риск
+            </button>
+            <button 
+              onClick={() => handleExportCsv('low')}
+              style={{ width: '100%', padding: '0.5rem', background: '#00aa00', color: '#fff' }}
+              title="Экспортировать кандидатов с низким риском"
+            >
+              📥 Экспорт низкий риск
+            </button>
+          </div>
+
+          <div className="candidateList">
+            {isLoading && <p className="muted">Загрузка кандидатов...</p>}
+            {!isLoading && candidates.length === 0 && (
+              <p className="muted">Кандидаты не найдены. Проверьте, что backend запущен.</p>
+            )}
+            {candidates.map((candidate) => (
+              <button
+                key={candidate.id}
+                className={`candidateItem ${selectedCandidate?.id === candidate.id ? 'candidateItem--active' : ''}`}
+                onClick={() => selectCandidate(candidate)}
+              >
+                <strong>{candidate.full_name}</strong>
+                <span>{candidate.target_position} · {candidate.level}</span>
+                <small>Заявлено опыта: {candidate.declared_total_months} мес.</small>
+                {candidate.last_risk_score !== null && candidate.last_risk_score !== undefined && (
+                  <small style={{ color: candidate.last_risk_score > 0.5 ? '#cc0000' : '#00aa00', fontWeight: 'bold' }}>
+                    Риск: {Math.round(candidate.last_risk_score * 100)}%
+                  </small>
+                )}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="card card--wide">
+          {selectedCandidate ? (
+            <>
+              <div className="sectionHeader">
+                <div>
+                  <h2>{selectedCandidate.full_name}</h2>
+                  <p>{selectedCandidate.target_position} · {selectedCandidate.level}</p>
+                </div>
+                {report && <RiskBadge level={report.risk_level} score={report.risk_score} />}
+              </div>
+
+              <div className="infoGrid">
+                <div>
+                  <h3>Резюме</h3>
+                  <p>{selectedCandidate.resume_text || 'Текст резюме не заполнен.'}</p>
+                </div>
+                <div>
+                  <h3>Внешние профили</h3>
+                  {profiles.length === 0 ? (
+                    <p>Нет подключённых профилей.</p>
+                  ) : (
+                    profiles.map((profile) => (
+                      <p key={profile.id}>
+                        <strong>{profile.profile_type}</strong>: {profile.profile_url}
+                      </p>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <h3>Опыт работы</h3>
+              <div className="timeline">
+                {experiences.map((experience) => (
+                  <article key={experience.id}>
+                    <strong>{experience.position_name}</strong>
+                    <span>{experience.company_name}</span>
+                    <small>
+                      {experience.started_at} — {experience.ended_at || 'по настоящее время'}
+                    </small>
+                    <p>{experience.description}</p>
+                  </article>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p>Выберите кандидата.</p>
+          )}
+        </section>
+      </div>
+
+      {report && (
+        <section className="card report">
+          <div className="sectionHeader">
+            <div>
+              <h2>Отчёт проверки</h2>
+              <p>{report.summary}</p>
+            </div>
+            <RiskBadge level={report.risk_level} score={report.risk_score} />
+          </div>
+
+          <div className="factorGrid">
+            {report.factors.map((factor) => (
+              <FactorCard key={factor.code} factor={factor} />
+            ))}
+          </div>
+        </section>
+      )}
+    </main>
+  );
+}
+
+        <section className="card card--wide">
+          {selectedCandidate ? (
+            <>
+              <div className="sectionHeader">
+                <div>
+                  <h2>{selectedCandidate.full_name}</h2>
+                  <p>{selectedCandidate.target_position} · {selectedCandidate.level}</p>
+                </div>
+                {report && <RiskBadge level={report.risk_level} score={report.risk_score} />}
+              </div>
+
+              <div className="infoGrid">
+                <div>
+                  <h3>Резюме</h3>
+                  <p>{selectedCandidate.resume_text || 'Текст резюме не заполнен.'}</p>
+                </div>
+                <div>
+                  <h3>Внешние профили</h3>
+                  {profiles.length === 0 ? (
+                    <p>Нет подключённых профилей.</p>
+                  ) : (
+                    profiles.map((profile) => (
+                      <p key={profile.id}>
+                        <strong>{profile.profile_type}</strong>: {profile.profile_url}
+                      </p>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <h3>Опыт работы</h3>
+              <div className="timeline">
+                {experiences.map((experience) => (
+                  <article key={experience.id}>
+                    <strong>{experience.position_name}</strong>
+                    <span>{experience.company_name}</span>
+                    <small>
+                      {experience.started_at} — {experience.ended_at || 'по настоящее время'}
+                    </small>
+                    <p>{experience.description}</p>
+                  </article>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p>Выберите кандидата.</p>
+          )}
+        </section>
+      </div>
+
+      {report && (
+        <section className="card report">
+          <div className="sectionHeader">
+            <div>
+              <h2>Отчёт проверки</h2>
+              <p>{report.summary}</p>
+            </div>
+            <RiskBadge level={report.risk_level} score={report.risk_score} />
+          </div>
+
+          <div className="factorGrid">
+            {report.factors.map((factor) => (
+              <FactorCard key={factor.code} factor={factor} />
+            ))}
+          </div>
+        </section>
+      )}
+    </main>
+  );
+}
